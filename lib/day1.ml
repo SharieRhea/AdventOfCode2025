@@ -52,13 +52,14 @@ let rec part_2 lines dial num_zeroes =
       part_2 tail new_dial new_num_zeroes
   | [] -> num_zeroes
 
-let () =
+let run () =
+  print_endline "DAY 1:";
   (* the dial starts pointing at 50 *)
   print_endline
-    ("Part 1: "
+    ("    Part 1: "
     ^ string_of_int
         (part_1 (In_channel.input_lines (open_in "resources/day1.txt")) 50 0));
   print_endline
-    ("Part 2: "
+    ("    Part 2: "
     ^ string_of_int
         (part_2 (In_channel.input_lines (open_in "resources/day1.txt")) 50 0))

@@ -1,0 +1,4 @@
+(executable
+ (public_name AdventOfCode2025)
+ (name main)
+ (libraries AdventOfCode2025))

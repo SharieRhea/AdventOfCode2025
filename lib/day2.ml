@@ -25,9 +25,20 @@ let range start last =
   if start < last then aux start last [] else List.rev (aux last start [])
 
 let is_valid_id number part =
-  (* attempt to match two identical groups in the string *)
-  let expression = if part = 1 then Str.regexp "^\(.*\)\1$" else Str.regexp "^\(.*\)\1+$" in
-  not @@ Str.string_match expression (string_of_int number) 0
+  let candidate = string_of_int number in
+
+  let pattern =
+    (* attempt to match two identical groups in the string *)
+    if part = 1 then "^(.*)\\1$"
+    (* attempt to match at least two identical groups in the string *)
+      else "^(.*)\\1+$"
+  in
+
+  let expression = Pcre.regexp pattern in
+  try
+    ignore (Pcre.exec ~rex:expression candidate);
+    false
+  with Not_found -> true
 
 (* find the sum of invalid IDs for the given list of IDs *)
 let rec traverse_range sum list part =
@@ -44,6 +55,7 @@ let rec traverse_list sum ranges part =
       traverse_list (sum + traverse_range 0 range part) tail part
   | [] -> sum
 
-let () =
-  print_endline ("Part 1: " ^ string_of_int (traverse_list 0 parse_ranges 1));
-  print_endline ("Part 2: " ^ string_of_int (traverse_list 0 parse_ranges 2))
+let run () =
+  print_endline "DAY 2:";
+  print_endline ("    Part 1: " ^ string_of_int (traverse_list 0 parse_ranges 1));
+  print_endline ("    Part 2: " ^ string_of_int (traverse_list 0 parse_ranges 2))
