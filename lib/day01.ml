@@ -58,8 +58,8 @@ let run () =
   print_endline
     ("    Part 1: "
     ^ string_of_int
-        (part_1 (In_channel.input_lines (open_in "resources/day1.txt")) 50 0));
+        (part_1 (In_channel.input_lines (open_in "resources/day01.txt")) 50 0));
   print_endline
     ("    Part 2: "
     ^ string_of_int
-        (part_2 (In_channel.input_lines (open_in "resources/day1.txt")) 50 0))
+        (part_2 (In_channel.input_lines (open_in "resources/day01.txt")) 50 0))

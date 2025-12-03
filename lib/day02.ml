@@ -2,7 +2,7 @@
 let parse_ranges =
   let ranges =
     String.split_on_char ','
-      (List.nth (In_channel.input_lines @@ open_in "resources/day2.txt") 0)
+      (List.nth (In_channel.input_lines @@ open_in "resources/day02.txt") 0)
   in
   let rec parse_numbers build remaining =
     match remaining with

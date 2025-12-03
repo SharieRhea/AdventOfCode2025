@@ -5,8 +5,8 @@ let () =
   let day = read_int () in
   match day with
   | 0 ->
-      Day1.run ();
-      Day2.run ()
-  | 1 -> Day1.run ()
-  | 2 -> Day2.run ()
+      Day01.run ();
+      Day02.run ()
+  | 1 -> Day01.run ()
+  | 2 -> Day02.run ()
   | _ -> print_endline "Invalid entry"
