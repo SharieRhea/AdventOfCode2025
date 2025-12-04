@@ -6,7 +6,9 @@ let () =
   match day with
   | 0 ->
       Day01.run ();
-      Day02.run ()
+      Day02.run ();
+      Day03.run ()
   | 1 -> Day01.run ()
   | 2 -> Day02.run ()
+  | 3 -> Day03.run ()
   | _ -> print_endline "Invalid entry"
