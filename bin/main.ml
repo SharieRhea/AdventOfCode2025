@@ -1,6 +1,9 @@
 open AdventOfCode2025
 
-let days = [ Day01.run; Day02.run; Day03.run; Day04.run; Day05.run; Day06.run ]
+let days =
+  [
+    Day01.run; Day02.run; Day03.run; Day04.run; Day05.run; Day06.run; Day07.run;
+  ]
 
 let () =
   print_endline "Enter a day to run or 0 for all days: ";
