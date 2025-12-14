@@ -3,3 +3,6 @@ Advent of Code is a yearly programming event where small, two part puzzles are u
 This year there will be 12 puzzles, released December 1st through 12th. The event was created and is maintained by Eric Wastl, check out the website [here](https://adventofcode.com)! <br/>
 
 This year I am attempting all of the puzzles in OCaml, in order to learn the language. Wish me luck!
+
+## Completed
+I completed Advent of Code 2025 on December 13th, 2025!
