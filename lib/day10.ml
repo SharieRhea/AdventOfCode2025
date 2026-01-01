@@ -1,23 +1,13 @@
-open Z3
-
 type machine = {
-  lights : BatBitSet.t;
+  diagram : BatBitSet.t;
   buttons : BatBitSet.t list;
   joltages : int list;
 }
 
-type state = { presses : int; lights : BatBitSet.t }
-type system = { coefficients : int array array; augment : int array }
+module StringTable = Hashtbl.Make (String)
 
-module State = struct
-  type t = state
-
-  let compare state1 state2 = compare state1 state2
-end
-
-module StatePqueue = Pqueue.MakeMin (State)
-
-let parse_lights config =
+(* PARSING *)
+let parse_diagram config =
   let set = BatBitSet.empty () in
   config
   |> String.iteri (fun index character ->
@@ -47,7 +37,7 @@ let parse_joltages config =
 
 let build_machine line =
   let items = line |> String.split_on_char ' ' in
-  let lights = parse_lights (List.hd items) in
+  let diagram = parse_diagram (List.hd items) in
   let buttons =
     (* ignore the first item (lights config) and last item (joltage config) *)
     items |> List.tl
@@ -55,140 +45,138 @@ let build_machine line =
     |> List.map parse_buttons
   in
   let joltages = items |> List.rev |> List.hd |> parse_joltages in
-  { lights; buttons; joltages }
+  { diagram; buttons; joltages }
 
-let configure machine =
-  let queue = StatePqueue.create () in
-  let rec bfs = function
-    | Some node ->
-        (* apply every button to the current state and add to queue *)
-        let rec apply_button = function
-          | button :: tail ->
-              let new_state = BatBitSet.sym_diff node.lights button in
-              if BatBitSet.count new_state = 0 then node.presses + 1
-              else (
-                StatePqueue.add queue
-                  { lights = new_state; presses = node.presses + 1 };
-                apply_button tail)
-          | [] -> bfs (StatePqueue.pop_min queue)
-        in
-        apply_button machine.buttons
-    | None -> failwith "Did not reach target state!"
+(* UTILITIES *)
+let apply_button start button = BatBitSet.sym_diff start button
+let apply_buttons start buttons = buttons |> List.fold_left apply_button start
+
+let get_parity joltages =
+  let set = BatBitSet.empty () in
+  joltages
+  |> List.iteri (fun index joltage ->
+      BatBitSet.put set (joltage mod 2 = 1) index);
+  set
+
+let rec combinations = function
+  | [] -> [ [] ]
+  | head :: tail ->
+      let with_head = List.map (fun l -> head :: l) (combinations tail) in
+      let without_head = combinations tail in
+      with_head @ without_head
+
+let get_patterns buttons =
+  let combos = combinations buttons in
+  combos
+  |> List.map (fun combo -> (apply_buttons (BatBitSet.empty ()) combo, combo))
+
+let apply_buttons buttons joltages =
+  joltages
+  |> List.mapi (fun index joltage ->
+      joltage
+      - (buttons
+        |> List.fold_left
+             (fun sum button ->
+               if BatBitSet.mem button index then sum + 1 else sum)
+             0))
+
+let min_opt a b =
+  match (a, b) with None, x | x, None -> x | Some x, Some y -> Some (min x y)
+
+let min_list = function [] -> None | x :: xs -> Some (List.fold_left min x xs)
+
+let to_string_joltages joltages =
+  let str =
+    List.fold_left (fun acc it -> acc ^ string_of_int it ^ ",") "" joltages
   in
-  StatePqueue.add queue { lights = machine.lights; presses = 0 };
-  bfs (StatePqueue.pop_min queue)
+  "{" ^ str ^ "}"
 
-(* begin part 2 hell *)
+(* PART 1 *)
+let configure_machine machine =
+  get_patterns machine.buttons
+  |> List.filter_map (fun (pattern, buttons) ->
+      if BatBitSet.equal machine.diagram pattern then Some (List.length buttons)
+      else None)
+  |> List.sort compare |> List.hd
 
-let transpose matrix =
-  let rows = Array.length matrix in
-  let cols = Array.length matrix.(0) in
-  Array.init cols (fun j -> Array.init rows (fun i -> matrix.(i).(j)))
-
-let convert_to_system machine =
-  (* build a matrix where each row is a joltage value equation and each column represents a
-     potential button to press *)
-  let coefficients =
-    Array.of_list
-      (List.map
-         (fun bitset ->
-           Array.init (List.length machine.joltages) (fun i ->
-               if BatBitSet.mem bitset i then 1 else 0))
-         machine.buttons)
-    |> transpose
-  in
-  (* augmented column of the matrix *)
-  let augment = Array.of_list machine.joltages in
-  { coefficients; augment }
-
-(* use Z3 to solve a system of linear equations with more unknowns than
- * equations, while keeping all solutions integers values and mimimizing
- * their combined sum
-
- * i'm not even gonna pretend that i wrote this, although i do think i
- * understand the underlying math a little
+(*
+ * PART 2 
+ * this sh!t is not fast but hey it's cooler than using z3   
  *)
-let solve_min_sum (sys : system) =
-  (* create the context for z3 to operate within *)
-  let context = mk_context [] in
-  let opt = Optimize.mk_opt context in
+let rec configure_joltage patterns memo joltages =
+  let key = to_string_joltages joltages in
+  match StringTable.find_opt memo key with
+  | Some result -> result
+  | None ->
+      StringTable.add memo key None;
 
-  (* dimensions of the A matrix in Ax = b *)
-  let rows = Array.length sys.coefficients in
-  let columns = Array.length sys.coefficients.(0) in
+      (* pessimistic insert *)
+      let result =
+        if List.exists (fun j -> j < 0) joltages then None
+        else if List.for_all (( = ) 0) joltages then Some 0
+        else if List.exists (fun j -> j mod 2 = 1) joltages then
+          (* odd parity *)
+          let parity = get_parity joltages in
+          patterns
+          |> List.filter_map (fun (pattern, buttons) ->
+              if BatBitSet.equal parity pattern then
+                let next_joltages = apply_buttons buttons joltages in
+                match configure_joltage patterns memo next_joltages with
+                | None -> None
+                | Some cost -> Some (cost + List.length buttons)
+              else None)
+          |> min_list
+        else
+          (* all even, allow at most 1 attempt at keeping the same parity but
+             pressing buttons to prevent unsolvable machines *)
+          let align_then_divide =
+            patterns
+            |> List.filter_map (fun (pattern, buttons) ->
+                if BatBitSet.equal (BatBitSet.empty ()) pattern then
+                  let after_press = apply_buttons buttons joltages in
+                  let half = List.map (fun j -> j / 2) after_press in
+                  match configure_joltage patterns memo half with
+                  | None -> None
+                  | Some cost -> Some ((cost * 2) + List.length buttons)
+                else None)
+            |> min_list
+          in
 
-  (* make sure number of rows equals number of joltage values *)
-  if rows <> Array.length sys.augment then failwith "Dimension mismatch!";
+          let divide_now =
+            let half = List.map (fun j -> j / 2) joltages in
+            match configure_joltage patterns memo half with
+            | None -> None
+            | Some cost -> Some (cost * 2)
+          in
 
-  (* create integer variables x0, x1, ... to represent number of presses
-     for each button *)
-  let vars =
-    Array.init columns (fun i ->
-        Arithmetic.Integer.mk_const_s context ("x" ^ string_of_int i))
-  in
-  (* constrain to >= 0 since you can't press a button negative times *)
-  Array.iter
-    (fun v ->
-      let zero = Arithmetic.Integer.mk_numeral_i context 0 in
-      Optimize.add opt [ Arithmetic.mk_ge context v zero ] |> ignore)
-    vars;
-  (* constrain Ax = b, basically attach the augment column *)
-  for i = 0 to rows - 1 do
-    let lhs =
-      Array.fold_left
-        (fun acc j ->
-          let coeff = sys.coefficients.(i).(j) in
-          if coeff = 0 then acc
-          else
-            let c = Arithmetic.Integer.mk_numeral_i context coeff in
-            let term = Arithmetic.mk_mul context [ c; vars.(j) ] in
-            match acc with
-            | None -> Some term
-            | Some e -> Some (Arithmetic.mk_add context [ e; term ]))
-        None
-        (Array.init columns Fun.id)
-    in
-    let lhs = Option.get lhs in
-    let rhs = Arithmetic.Integer.mk_numeral_i context sys.augment.(i) in
-    let eq = Boolean.mk_eq context lhs rhs in
-    Optimize.add opt [ eq ] |> ignore
-  done;
-
-  (* minimize the sum of all xi so we have the least button presses possible *)
-  let sum = Arithmetic.mk_add context (Array.to_list vars) in
-  Optimize.minimize opt sum |> ignore;
-
-  (* see if there is a solution *)
-  match Optimize.check opt with
-  | Solver.SATISFIABLE ->
-      let model = Option.get (Optimize.get_model opt) in
-      let solution =
-        Array.map
-          (fun v ->
-            match Model.eval model v true with
-            | Some n -> Arithmetic.Integer.get_big_int n
-            | None -> failwith "Model error!")
-          vars
+          min_opt align_then_divide divide_now
       in
-      (* return the sum of all button presses *)
-      Array.fold_left (fun sum num -> sum + Z.to_int num) 0 solution
-  | _ -> failwith "No solution!"
+
+      StringTable.replace memo key result;
+      result
+
+(* RUN *)
+let part1 machines =
+  List.fold_left (fun sum machine -> sum + configure_machine machine) 0 machines
+
+let part2 machines =
+  List.fold_left
+    (fun sum machine ->
+      let memo = StringTable.create 4096 in
+      match
+        configure_joltage (get_patterns machine.buttons) memo machine.joltages
+      with
+      | None -> failwith "No solution!"
+      | Some minimum -> sum + minimum)
+    0 machines
 
 let run () =
   print_endline "DAY 10:";
+
   let machines =
     open_in "resources/day10.txt"
     |> In_channel.input_lines |> List.map build_machine
   in
 
-  let presses =
-    machines
-    |> List.fold_left (fun sum machine -> sum + (machine |> configure)) 0
-  in
-  print_endline ("    Part 1: " ^ (presses |> string_of_int));
-
-  let systems = List.map convert_to_system machines in
-  let joltage_presses =
-    List.fold_left (fun sum system -> sum + solve_min_sum system) 0 systems
-  in
-  print_endline ("    Part 2: " ^ (joltage_presses |> string_of_int))
+  print_endline ("    Part 1: " ^ (machines |> part1 |> string_of_int));
+  print_endline ("    Part 2: " ^ (machines |> part2 |> string_of_int))
